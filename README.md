@@ -21,4 +21,9 @@ Comando:
     --discard-all-in   ".git,node_modules" `
     --discard-files    "README.md,.DS_Store" `
     --pretty --tree-md README_TREE.md
+
+    python scan_project.py C:\miRepo `
+    --discard-all-in    "generated/acceso,generated/permisos,generated/roles" `
+    --discard-files-in  ".git,node_modules,logs,media" `
+    --pretty --tree-md  README_TREE.md
 ```
