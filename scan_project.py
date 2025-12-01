@@ -9,8 +9,10 @@ from typing import Dict, Optional
 
 import typer
 from pydantic import BaseModel, Field
-from rich.console import Console
+from rich.console import Console, Capture
 from rich.tree import Tree
+
+from io import StringIO
 
 app = typer.Typer()
 console = Console()
@@ -21,6 +23,7 @@ DEFAULT_IGNORE = {
 }
 
 
+# ---------- modelos ----------
 class PackageJson(BaseModel):
     scripts: Dict[str, str] = Field(default_factory=dict)
     dependencies: Dict[str, str] = Field(default_factory=dict)
@@ -46,6 +49,7 @@ class DirNode(BaseModel):
 Node = FileNode | DirNode   # 3.10+ syntax
 
 
+# ---------- utilidades ----------
 def extract_package_json_info(file_path: Path) -> dict:
     try:
         data = json.loads(file_path.read_text(encoding="utf-8"))
@@ -56,6 +60,26 @@ def extract_package_json_info(file_path: Path) -> dict:
         return {}
 
 
+def render_tree_plain(root_node: DirNode, root_name: str) -> str:
+    """Devuelve el árbol como texto sin colores."""
+    buffer = StringIO()
+    cons = Console(file=buffer, color_system=None, width=240)
+    tree = Tree(root_name)
+    _fill_rich_tree(root_node, tree)
+    cons.print(tree)
+    return buffer.getvalue()
+
+def _fill_rich_tree(node: DirNode, parent: Tree):
+    """Recursivo para Rich."""
+    for name, child in node.children.items():
+        if isinstance(child, DirNode):
+            branch = parent.add(f"{name}/")
+            _fill_rich_tree(child, branch)
+        else:
+            parent.add(name)
+
+
+# ---------- árbol ----------
 def build_tree(current: Path, root: Path, ignore: set[str], rich_parent: Tree) -> DirNode:
     relative = current.relative_to(root)
     node = DirNode(path=str(relative).replace("\\", "/"))
@@ -79,6 +103,7 @@ def build_tree(current: Path, root: Path, ignore: set[str], rich_parent: Tree) -
     return node
 
 
+# ---------- CLI ----------
 @app.command()
 def main(
     project_path: Path = typer.Argument(".", help="Carpeta a escanear"),
@@ -87,6 +112,9 @@ def main(
         list(DEFAULT_IGNORE), "--ignore", "-i", help="Carpetas a omitir"
     ),
     pretty: bool = typer.Option(False, "--pretty", "-p", help="Mostrar árbol en consola"),
+    tree_md: Optional[str] = typer.Option(
+        None, "--tree-md", help="Guardar solo el árbol en un archivo .md (p. ej. README_TREE.md)"
+    ),
 ) -> None:
     root = project_path.resolve()
     if not root.is_dir():
@@ -100,12 +128,20 @@ def main(
     if pretty:
         console.print(rich_tree)
 
+    if tree_md:
+        plain_text = render_tree_plain(structure[root.name], root.name)
+        Path(tree_md).write_text(
+            f"# Árbol del proyecto\n\n```\n{plain_text}\n```\n",
+            encoding="utf-8"
+        )
+        console.print(f"[bold green]✅ Árbol guardado en {tree_md}[/bold green]")
+
     out_path = Path(output)
     out_path.write_text(
         json.dumps(structure, indent=2, ensure_ascii=False, default=dict),
         encoding="utf-8"
     )
-    console.print(f"[bold green]✅ Guardado en {out_path.absolute()}[/bold green]")
+    console.print(f"[bold green]✅ JSON guardado en {out_path.absolute()}[/bold green]")
 
 
 if __name__ == "__main__":
